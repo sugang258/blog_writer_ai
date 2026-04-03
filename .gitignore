@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+env/
+
+# 환경변수
+.env
+
+# playwright 로그인 세션
+browser_profile_acc1/
+browser_profile_acc2/
+browser_profile_acc3/
+
+# 프롬프트
+blog_review_prompt.txt
+
+# 실행 결과
+output/
+images/
+latest_review.txt
+
+# VSCode
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# logs
+*.log
