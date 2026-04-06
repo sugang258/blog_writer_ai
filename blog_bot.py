@@ -250,15 +250,16 @@ def find_product_card_and_issue_link(page, max_scroll_tries=10):
                 ).inner_text().strip()
             except Exception:
                 product_name = "상품"
-
-            image_url = None
+            
+            detail_url = None
             try:
-                image = card.locator("img").first
-                image_url = image.get_attribute("src")
-                if not image_url:
-                    image_url = image.get_attribute("data-src")
+                detail_link = card.locator("a.ProductItem_link__Vm1vw").first
+                detail_url = detail_link.get_attribute("href")
+
+                if detail_url and detail_url.startswith("/"):
+                    detail_url = "https://brandconnect.naver.com" + detail_url
             except Exception:
-                image_url = None
+                detail_url = None
 
             # 가격 추출
             price_text = ""
@@ -278,8 +279,8 @@ def find_product_card_and_issue_link(page, max_scroll_tries=10):
             button_text = button.inner_text().strip()
 
             print(f"[DEBUG] card[{i}] 상품명: {product_name}")
+            print(f"[DEBUG] card[{i}] 상세URL: {detail_url}")
             print(f"[DEBUG] card[{i}] 버튼텍스트: {button_text}")
-            print(f"[DEBUG] card[{i}] 이미지URL: {image_url}")
             print(f"[DEBUG] card[{i}] 가격텍스트: {price_text}")
             print(f"[DEBUG] card[{i}] 가격값: {price_value}")
 
@@ -329,7 +330,7 @@ def find_product_card_and_issue_link(page, max_scroll_tries=10):
                 return {
                     "product_name": product_name,
                     "affiliate_link": issued_link,
-                    "image_url": image_url,
+                    "detail_url": detail_url,
                     "price": price_value
                 }
 
@@ -405,21 +406,24 @@ def run_generate_review_flow(post_count=3, account_index=1):
 
                 product_name = result["product_name"]
                 affiliate_link = result["affiliate_link"]
-                image_url = result.get("image_url")
                 price_value = result.get("price")
+                detail_url = result.get("detail_url")
 
                 print("상품명:", product_name)
                 print("링크:", affiliate_link)
-                print("이미지 URL:", image_url)
                 print("가격:", price_value)
+                print("상세 URL:", detail_url)
 
-                image_path = None
-                if image_url:
+                image_path_1 = None
+                image_path_2 = None
+
+                if detail_url:
                     try:
-                        image_path = download_product_image(image_url)
-                        print("이미지 저장 완료:", image_path)
+                        image_path_1, image_path_2 = download_product_detail_images(context, detail_url)
+                        print("상세 이미지 1 저장 완료:", image_path_1)
+                        print("상세 이미지 2 저장 완료:", image_path_2)
                     except Exception as e:
-                        print("이미지 다운로드 실패:", e)
+                        print("상세 이미지 다운로드 실패: ", e)
 
                 parsed = generate_blog_review(
                     affiliate_url=affiliate_link,
@@ -448,7 +452,8 @@ def run_generate_review_flow(post_count=3, account_index=1):
                     title=parsed["title"],
                     body=parsed["body"],
                     hashtags=parsed["hashtags"],
-                    image_path=image_path
+                    image_path_1=image_path_1,
+                    image_path_2=image_path_2
                 )
 
                 # 성공 카운트 증가
@@ -480,6 +485,73 @@ def download_product_image(image_url):
         f.write(response.content)
 
     return str(file_path)
+
+## 상세에서 이미지 2개 추출
+def get_first_two_detail_image_urls(detail_page):
+    imgs = detail_page.locator(".ProductDetail_img__TLpyf img")
+    count = imgs.count()
+
+    print(f"[DEBUG] 상세 이미지 개수: {count}")
+
+    first_image_url = None
+    second_image_url = None
+
+    if count >= 1:
+        first = imgs.nth(0)
+        first_image_url = first.get_attribute("src") or first.get_attribute("data-src")
+
+    if count >= 2:
+        second = imgs.nth(1)
+        second_image_url = second.get_attribute("src") or second.get_attribute("data-src")
+
+    print("[DEBUG] first_image_url =", first_image_url)
+    print("[DEBUG] second_image_url =", second_image_url)
+
+    return first_image_url, second_image_url
+
+
+## 이미지 저장
+def download_image_to_file(image_url, file_path):
+    response = requests.get(image_url, timeout=15)
+    response.raise_for_status()
+
+    with open(file_path, "wb") as f:
+        f.write(response.content)
+
+    return str(file_path)
+
+
+## 상세 진입 후 이미지 2개 저장
+def download_product_detail_images(context, detail_url):
+    detail_page = context.new_page()
+    try:
+        detail_page.goto(detail_url, wait_until="domcontentloaded")
+        detail_page.wait_for_timeout(3000)
+
+        first_image_url, second_image_url = get_first_two_detail_image_urls(detail_page)
+
+        images_dir = BASE_DIR / "images"
+        images_dir.mkdir(exist_ok=True)
+
+        image_path_1 = None
+        image_path_2 = None
+
+        if first_image_url:
+            image_path_1 = download_image_to_file(
+                first_image_url,
+                images_dir / "product_detail_1.jpg"
+            )
+
+        if second_image_url:
+            image_path_2 = download_image_to_file(
+                second_image_url,
+                images_dir / "product_detail_2.jpg"
+            )
+
+        return image_path_1, image_path_2
+
+    finally:
+        detail_page.close()
 
 
 
@@ -585,7 +657,29 @@ def run_write_blog_from_latest_review():
                 title=parsed["title"],
                 body=parsed["body"],
                 hashtags=parsed["hashtags"],
-                image_path=str(image_path) if image_path else None
+                image_path_1=None,
+                image_path_2=None,
+                auto_publish=True
             )
         finally:
             context.close()
+
+###############################################################################
+######################### 상세페이지 접근 test #################################
+###############################################################################
+
+def open_detail_page_test(context, detail_url):
+    detail_page = context.new_page()
+    try:
+        detail_page.goto(detail_url, wait_until="domcontentloaded")
+        detail_page.wait_for_timeout(3000)
+
+        print("[DEBUG] 상세 페이지 진입 URL:", detail_page.url)
+        print("[DEBUG] 상세 페이지 title:", detail_page.title())
+
+        first_image_url, second_image_url = get_first_two_detail_image_urls(detail_page)
+
+        input("상세페이지가 잘 열렸는지 확인 후 엔터를 누르세요...")
+        return first_image_url, second_image_url
+    finally:
+        detail_page.close()

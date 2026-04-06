@@ -211,7 +211,7 @@ def ensure_editor_ready_for_image(page, frame):
 ###################################################
 
 ## 블로그 작성
-def write_naver_blog(context, blog_id, title, body, hashtags, image_path=None, auto_publish=True):
+def write_naver_blog(context, blog_id, title, body, hashtags, image_path_1, image_path_2, auto_publish=True):
     page = context.new_page()
     BLOG_WRITE_URL = f"https://blog.naver.com/{blog_id}?Redirect=Write&categoryNo="
 
@@ -272,7 +272,7 @@ def write_naver_blog(context, blog_id, title, body, hashtags, image_path=None, a
             page.keyboard.press("Enter")
 
         # 첫 번째 이미지 (2번째 문단 뒤)
-        if image_path:
+        if image_path_1:
             if ends_with_link_block(p2):
                 print("[INFO] 2번째 문단이 링크로 끝남 → 이미지 업로드 전 안정화 수행")
                 ensure_editor_ready_for_image(page, frame)
@@ -284,7 +284,7 @@ def write_naver_blog(context, blog_id, title, body, hashtags, image_path=None, a
                 except Exception:
                     pass
 
-            upload_image(page, frame, image_path)
+            upload_image(page, frame, image_path_1)
             page.keyboard.press("Enter")
             page.keyboard.press("Enter")
 
@@ -296,7 +296,7 @@ def write_naver_blog(context, blog_id, title, body, hashtags, image_path=None, a
             page.keyboard.press("Enter")
 
         # 두 번째 이미지 (3번째 문단 뒤)
-        if image_path:
+        if image_path_2:
             if ends_with_link_block(p3):
                 print("[INFO] 3번째 문단이 링크로 끝남 → 이미지 업로드 전 안정화 수행")
                 ensure_editor_ready_for_image(page, frame)
@@ -308,7 +308,7 @@ def write_naver_blog(context, blog_id, title, body, hashtags, image_path=None, a
                 except Exception:
                     pass
 
-            upload_image(page, frame, image_path)
+            upload_image(page, frame, image_path_2)
             page.keyboard.press("Enter")
             page.keyboard.press("Enter")
 

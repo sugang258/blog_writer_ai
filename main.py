@@ -9,7 +9,7 @@ from blog_bot import (
 mode = input("1: 1번 블로그 작성 > / 2: 2번 블로그 작성 > / 3: 모두 작성")
 
 if mode == "1":
-    run_generate_review_flow(post_count=3, account_index=1)
+    run_generate_review_flow(post_count=1, account_index=1)
 elif mode == "2":
     run_generate_review_flow(post_count=3, account_index=2)
 elif mode == "3":
