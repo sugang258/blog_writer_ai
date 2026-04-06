@@ -88,14 +88,48 @@ def upload_image(page, frame, image_path):
     if not image_path:
         return
 
-    with page.expect_file_chooser() as fc_info:
-        frame.get_by_role("button", name="사진 추가").click(timeout=5000)
+    photo_btn = frame.get_by_role("button", name="사진 추가")
 
-    file_chooser = fc_info.value
-    file_chooser.set_files(image_path)
+    # 업로드 전에 본문 포커스 한번 정리
+    try:
+        frame.locator('div[contenteditable="true"]').last.click(timeout=3000)
+        page.wait_for_timeout(500)
+    except Exception:
+        try:
+            frame.get_by_text("글감과 함께 나의 일상을 기록해보세요!").click(timeout=3000)
+            page.wait_for_timeout(500)
+        except Exception:
+            pass
 
-    print("이미지 업로드 완료")
-    page.wait_for_timeout(3000)
+    # 버튼이 실제로 준비될 때까지 대기
+    photo_btn.wait_for(timeout=5000)
+
+    # 파일 chooser 이벤트를 확실히 잡도록 timeout 강화
+    try:
+        with page.expect_file_chooser(timeout=10000) as fc_info:
+            photo_btn.click(timeout=5000)
+
+        file_chooser = fc_info.value
+        file_chooser.set_files(str(image_path))
+
+        print("이미지 업로드 완료")
+        page.wait_for_timeout(3000)
+
+    except Exception as e:
+        print(f"[WARN] 첫 이미지 업로드 시도 실패: {e}")
+        print("[INFO] 본문 포커스 재정리 후 이미지 업로드 재시도")
+
+        # 재시도 전에 에디터 상태 다시 안정화
+        ensure_editor_ready_for_image(page, frame)
+
+        with page.expect_file_chooser(timeout=10000) as fc_info:
+            photo_btn.click(timeout=5000)
+
+        file_chooser = fc_info.value
+        file_chooser.set_files(str(image_path))
+
+        print("이미지 업로드 완료 (재시도 성공)")
+        page.wait_for_timeout(3000)
 
 
 def split_text_keep_links(text: str):
@@ -126,16 +160,50 @@ def type_text_with_link_pause(page, text: str, pause_ms: int = 3000):
         page.keyboard.type(chunk_text)
         page.keyboard.press("Enter")
 
-
         if chunk_type == "link":
-            print(f"링크 입력 완료")
+            print("링크 입력 완료")
             page.wait_for_timeout(pause_ms)
+
+            # 링크 자동변환/미리보기 처리 끝날 시간을 조금 더 주고
+            # 일반 문단으로 빠져나오도록 추가 엔터
+            page.keyboard.press("Enter")
+            page.keyboard.press("Enter")
+            page.wait_for_timeout(1000)
 
         if idx != len(chunks) - 1:
             page.keyboard.press("Enter")
             page.keyboard.press("Enter")
 
 
+def ends_with_link_block(text: str) -> bool:
+    if not text:
+        return False
+
+    text = text.strip()
+    return bool(re.search(r'👉 구매하러 가기\s*\nhttps?://\S+\s*$', text))
+
+
+def ensure_editor_ready_for_image(page, frame):
+    """
+    링크 자동변환 직후나 에디터 포커스가 애매할 때
+    일반 본문 문단으로 커서를 확실히 빼주는 용도
+    """
+    try:
+        # 본문 영역 다시 클릭해서 포커스 복구
+        frame.locator('div[contenteditable="true"]').last.click(timeout=3000)
+        page.wait_for_timeout(500)
+    except Exception:
+        try:
+            frame.get_by_text("글감과 함께 나의 일상을 기록해보세요!").click(timeout=3000)
+            page.wait_for_timeout(500)
+        except Exception:
+            pass
+
+    # 링크 카드/자동변환 블록에서 빠져나오기 위해 여유 있게 줄바꿈
+    page.keyboard.press("End")
+    page.keyboard.press("Enter")
+    page.keyboard.press("Enter")
+    page.wait_for_timeout(1200)
 
 
 ###################################################
@@ -205,6 +273,17 @@ def write_naver_blog(context, blog_id, title, body, hashtags, image_path=None, a
 
         # 첫 번째 이미지 (2번째 문단 뒤)
         if image_path:
+            if ends_with_link_block(p2):
+                print("[INFO] 2번째 문단이 링크로 끝남 → 이미지 업로드 전 안정화 수행")
+                ensure_editor_ready_for_image(page, frame)
+            else:
+                # 그래도 불안정할 수 있으니 본문 한번 재클릭
+                try:
+                    frame.locator('div[contenteditable="true"]').last.click(timeout=3000)
+                    page.wait_for_timeout(500)
+                except Exception:
+                    pass
+
             upload_image(page, frame, image_path)
             page.keyboard.press("Enter")
             page.keyboard.press("Enter")
@@ -218,6 +297,17 @@ def write_naver_blog(context, blog_id, title, body, hashtags, image_path=None, a
 
         # 두 번째 이미지 (3번째 문단 뒤)
         if image_path:
+            if ends_with_link_block(p3):
+                print("[INFO] 3번째 문단이 링크로 끝남 → 이미지 업로드 전 안정화 수행")
+                ensure_editor_ready_for_image(page, frame)
+            else:
+                # 그래도 불안정할 수 있으니 본문 한번 재클릭
+                try:
+                    frame.locator('div[contenteditable="true"]').last.click(timeout=3000)
+                    page.wait_for_timeout(500)
+                except Exception:
+                    pass
+
             upload_image(page, frame, image_path)
             page.keyboard.press("Enter")
             page.keyboard.press("Enter")
