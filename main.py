@@ -15,7 +15,7 @@ def main():
     mode = sys.argv[1]
 
     if mode == "1":
-        run_generate_review_flow(post_count=9, account_index=1)
+        run_generate_review_flow(post_count=20, account_index=1)
     elif mode == "2":
         run_generate_review_flow(post_count=20, account_index=2)
     elif mode == "3":
