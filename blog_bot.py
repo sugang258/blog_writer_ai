@@ -1,16 +1,14 @@
 from pathlib import Path
 import pyperclip
 import requests
-import json
 import re
 
 from config import get_account_credentials, validate_required_env, MIN_PRICE, MAX_PRICE
 from playwright.sync_api import sync_playwright
-from ai_writer import generate_blog_review, split_review_text, save_review_result
-from blog_writer import write_naver_blog, ensure_blog_login
+from ai_writer import generate_blog_review, save_review_result
+from blog_writer import write_naver_blog
 
 BASE_DIR = Path(__file__).resolve().parent
-POSTED_LOG_PATH = BASE_DIR / "output" / "posted_products.json"
 
 ###################################################################
 #################### 로그인 ########################################
@@ -126,39 +124,6 @@ def check_brandconnect_login(account_index=1):
 
 
 
-
-
-###########################################################################
-################### posted_products (현재 미사용) ###########################
-###########################################################################
-
-## posted_products 비우기
-def clear_posted_products():
-    save_posted_products(set())
-    print("[초기화] posted_products.json 비움")
-
-## posted_products 조회
-def load_posted_products():
-    if not POSTED_LOG_PATH.exists():
-        return set()
-
-    try:
-        data = json.loads(POSTED_LOG_PATH.read_text(encoding="utf-8"))
-        return set(data)
-    except Exception:
-        return set()
-
-## posted_products 저장
-def save_posted_products(posted_set):
-    POSTED_LOG_PATH.parent.mkdir(exist_ok=True)
-    POSTED_LOG_PATH.write_text(
-        json.dumps(sorted(list(posted_set)), ensure_ascii=False, indent=2),
-        encoding="utf-8"
-    )
-
-
-
-
 ###########################################################################
 ########################## brand connect ##################################
 ###########################################################################
@@ -173,58 +138,6 @@ def parse_price_to_int(price_text: str) -> int | None:
         return None
 
     return int(digits)
-
-## 브랜드 커넥트 링크 발급 (현재 사용 X)
-def issue_brandconnect_link():
-    with sync_playwright() as p:
-        context = p.chromium.launch_persistent_context(
-            user_data_dir=USER_DATA_DIR,
-            headless=False
-        )
-
-        try:
-            page = context.new_page()
-
-            ensure_brandconnect_login(page);
-
-            # page.goto("https://brandconnect.naver.com/923422661831456/affiliate/products")
-            # page.wait_for_timeout(3000)
-
-            page.get_by_role("link", name="프로모션 상품 전체보기").click()
-            page.wait_for_timeout(2000)
-
-            page.get_by_role("tab", name="디지털/가전").click()
-            page.wait_for_timeout(2000)
-
-            with page.expect_response(
-                lambda r: "gw-brandconnect.naver.com/affiliate/command/affiliate-urls" in r.url
-            ) as resp_info:
-                page.get_by_role("button", name="링크 발급").first.click()
-
-            resp = resp_info.value
-
-            if resp.status != 200:
-                raise Exception(f"링크 발급 API 실패: {resp.status}")
-
-            data = resp.json()
-            issued_link = data.get("url")
-
-            if not issued_link:
-                raise Exception(f"url 필드 없음: {data}")
-
-            # 확인 버튼 닫기
-            page.wait_for_timeout(1000)
-            page.get_by_role("button", name="확인").click()
-
-            # 방금 발급한 링크를 PC 클립보드에 복사
-            pyperclip.copy(issued_link)
-
-            print("발급된 링크:", issued_link)
-            print("클립보드 복사 완료")
-            return issued_link
-
-        finally:
-            context.close()
 
 
 ## 브랜드 커넥트 링크 발급 (현재 사용 O)
@@ -414,14 +327,13 @@ def run_generate_review_flow(post_count=3, account_index=1):
                 print("가격:", price_value)
                 print("상세 URL:", detail_url)
 
-                image_path_1 = None
-                image_path_2 = None
+                image_paths = {}
 
                 if detail_url:
                     try:
-                        image_path_1, image_path_2 = download_product_detail_images(context, detail_url)
-                        print("상세 이미지 1 저장 완료:", image_path_1)
-                        print("상세 이미지 2 저장 완료:", image_path_2)
+                        image_paths = download_product_detail_images(context, detail_url, max_images=5)
+                        for idx, path in image_paths.items():
+                            print(f"상세 이미지 {idx} 저장 완료: {path}")
                     except Exception as e:
                         print("상세 이미지 다운로드 실패: ", e)
 
@@ -448,12 +360,11 @@ def run_generate_review_flow(post_count=3, account_index=1):
 
                 write_naver_blog(
                     context=context,
-                    blog_id = naver_id,
+                    blog_id=naver_id,
                     title=parsed["title"],
                     body=parsed["body"],
                     hashtags=parsed["hashtags"],
-                    image_path_1=image_path_1,
-                    image_path_2=image_path_2
+                    image_paths=image_paths
                 )
 
                 # 성공 카운트 증가
@@ -471,43 +382,30 @@ def run_generate_review_flow(post_count=3, account_index=1):
 
 
 
-## 썸네일 이미지 저장
-def download_product_image(image_url):
-    images_dir = BASE_DIR / "images"
-    images_dir.mkdir(exist_ok=True)
+###################################################################
+######################## 이미지 처리 ###############################
+###################################################################
 
-    file_path = images_dir / "product.jpg"
-
-    response = requests.get(image_url, timeout=15)
-    response.raise_for_status()
-
-    with open(file_path, "wb") as f:
-        f.write(response.content)
-
-    return str(file_path)
-
-## 상세에서 이미지 2개 추출
-def get_first_two_detail_image_urls(detail_page):
+# 상세 페이지 이미지 가져오기
+def get_detail_image_urls(detail_page, max_images=5):
     imgs = detail_page.locator(".ProductDetail_img__TLpyf img")
     count = imgs.count()
 
     print(f"[DEBUG] 상세 이미지 개수: {count}")
 
-    first_image_url = None
-    second_image_url = None
+    image_urls = []
 
-    if count >= 1:
-        first = imgs.nth(0)
-        first_image_url = first.get_attribute("src") or first.get_attribute("data-src")
+    for i in range(min(count, max_images)):
+        img = imgs.nth(i)
+        image_url = img.get_attribute("src") or img.get_attribute("data-src")
 
-    if count >= 2:
-        second = imgs.nth(1)
-        second_image_url = second.get_attribute("src") or second.get_attribute("data-src")
+        if image_url:
+            image_urls.append(image_url)
 
-    print("[DEBUG] first_image_url =", first_image_url)
-    print("[DEBUG] second_image_url =", second_image_url)
+    for idx, url in enumerate(image_urls, start=1):
+        print(f"[DEBUG] image_url_{idx} = {url}")
 
-    return first_image_url, second_image_url
+    return image_urls
 
 
 ## 이미지 저장
@@ -521,39 +419,36 @@ def download_image_to_file(image_url, file_path):
     return str(file_path)
 
 
-## 상세 진입 후 이미지 2개 저장
-def download_product_detail_images(context, detail_url):
+def download_product_detail_images(context, detail_url, max_images=5):
     detail_page = context.new_page()
     try:
         detail_page.goto(detail_url, wait_until="domcontentloaded")
         detail_page.wait_for_timeout(3000)
 
-        first_image_url, second_image_url = get_first_two_detail_image_urls(detail_page)
+        image_urls = get_detail_image_urls(detail_page, max_images=max_images)
 
         images_dir = BASE_DIR / "images"
         images_dir.mkdir(exist_ok=True)
 
-        image_path_1 = None
-        image_path_2 = None
+        image_paths = {}
 
-        if first_image_url:
-            image_path_1 = download_image_to_file(
-                first_image_url,
-                images_dir / "product_detail_1.jpg"
+        for idx, image_url in enumerate(image_urls, start=1):
+            image_path = download_image_to_file(
+                image_url,
+                images_dir / f"product_detail_{idx}.jpg"
             )
+            image_paths[idx] = image_path
 
-        if second_image_url:
-            image_path_2 = download_image_to_file(
-                second_image_url,
-                images_dir / "product_detail_2.jpg"
-            )
-
-        return image_path_1, image_path_2
+        return image_paths
 
     finally:
         detail_page.close()
 
 
+
+###################################################################
+######################## alert 처리 ################################
+###################################################################
 
 ## 브랜드 커넥터 alert 창 닫기
 def close_brandconnect_alert_if_exists(page):
@@ -587,99 +482,3 @@ def close_brandconnect_alert_if_exists(page):
 
     except Exception as e:
         print("[DEBUG] alertdialog 닫기 실패:", e)
-
-
-
-###############################################################################
-######################### lastest_review test #################################
-###############################################################################
-
-## lastest_review 조회
-def load_review_result(filename="latest_review.txt"):
-    file_path = BASE_DIR / "output" / filename
-
-    if not file_path.exists():
-        raise FileNotFoundError(f"리뷰 파일이 없습니다: {file_path}")
-
-    text = file_path.read_text(encoding="utf-8").strip()
-
-    title = ""
-    body = ""
-    hashtags = ""
-
-    if "[제목]" in text and "[본문]" in text and "[해시태그]" in text:
-        try:
-            title_part = text.split("[제목]", 1)[1].split("[본문]", 1)[0].strip()
-            body_part = text.split("[본문]", 1)[1].split("[해시태그]", 1)[0].strip()
-            hashtag_part = text.split("[해시태그]", 1)[1].strip()
-
-            title = title_part
-            body = body_part
-            hashtags = hashtag_part
-        except Exception as e:
-            raise ValueError(f"리뷰 파일 파싱 실패: {e}")
-    else:
-        raise ValueError("리뷰 파일 형식이 올바르지 않습니다. [제목], [본문], [해시태그] 구분자가 필요합니다.")
-
-    return {
-        "title": title,
-        "body": body,
-        "hashtags": hashtags
-    }
-
-
-## lastest_review 블로그 쓰기
-def run_write_blog_from_latest_review():
-    parsed = load_review_result("latest_review.txt")
-
-    print("\n===== 저장된 제목 =====\n")
-    print(parsed["title"])
-
-    print("\n===== 저장된 본문 =====\n")
-    print(parsed["body"][:500])
-
-    print("\n===== 저장된 해시태그 =====\n")
-    print(parsed["hashtags"])
-
-    image_path = BASE_DIR / "images" / "product.jpg"
-    if not image_path.exists():
-        image_path = None
-
-    with sync_playwright() as p:
-        context = p.chromium.launch_persistent_context(
-            user_data_dir=USER_DATA_DIR,
-            headless=False
-        )
-
-        try:
-            write_naver_blog(
-                context=context,
-                title=parsed["title"],
-                body=parsed["body"],
-                hashtags=parsed["hashtags"],
-                image_path_1=None,
-                image_path_2=None,
-                auto_publish=True
-            )
-        finally:
-            context.close()
-
-###############################################################################
-######################### 상세페이지 접근 test #################################
-###############################################################################
-
-def open_detail_page_test(context, detail_url):
-    detail_page = context.new_page()
-    try:
-        detail_page.goto(detail_url, wait_until="domcontentloaded")
-        detail_page.wait_for_timeout(3000)
-
-        print("[DEBUG] 상세 페이지 진입 URL:", detail_page.url)
-        print("[DEBUG] 상세 페이지 title:", detail_page.title())
-
-        first_image_url, second_image_url = get_first_two_detail_image_urls(detail_page)
-
-        input("상세페이지가 잘 열렸는지 확인 후 엔터를 누르세요...")
-        return first_image_url, second_image_url
-    finally:
-        detail_page.close()

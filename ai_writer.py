@@ -107,6 +107,27 @@ def force_fix_purchase_links(body: str, affiliate_url: str) -> str:
     return body
 
 
+def normalize_image_markers(text: str) -> str:
+    if not text:
+        return ""
+
+    # 대괄호 없는 것도 대괄호 형식으로 보정
+    text = re.sub(r'(?<!\[)이미지\s*1(?!\])', '[이미지1]', text)
+    text = re.sub(r'(?<!\[)이미지\s*2(?!\])', '[이미지2]', text)
+    text = re.sub(r'(?<!\[)이미지\s*3(?!\])', '[이미지3]', text)
+    text = re.sub(r'(?<!\[)이미지\s*4(?!\])', '[이미지4]', text)
+    text = re.sub(r'(?<!\[)이미지\s*5(?!\])', '[이미지5]', text)
+
+    # 공백 섞인 대괄호 형태도 정규화
+    text = re.sub(r'\[\s*이미지\s*1\s*\]', '[이미지1]', text)
+    text = re.sub(r'\[\s*이미지\s*2\s*\]', '[이미지2]', text)
+    text = re.sub(r'\[\s*이미지\s*3\s*\]', '[이미지3]', text)
+    text = re.sub(r'\[\s*이미지\s*4\s*\]', '[이미지4]', text)
+    text = re.sub(r'\[\s*이미지\s*5\s*\]', '[이미지5]', text)
+
+    return text
+
+
 def split_review_text(text: str, affiliate_url: str = "") -> dict:
     text = text.strip()
 
@@ -193,6 +214,7 @@ def generate_blog_review(affiliate_url, product_name) -> dict:
 
     parsed["title"] = clean_blog_text(parsed["title"], affiliate_url)
     parsed["body"] = force_fix_purchase_links(parsed["body"], affiliate_url)
+    parsed["body"] = normalize_image_markers(parsed["body"])
     parsed["hashtags"] = clean_blog_text(parsed["hashtags"], affiliate_url)
 
     return parsed
