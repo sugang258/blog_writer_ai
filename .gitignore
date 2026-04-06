@@ -30,4 +30,7 @@ latest_review.txt
 Thumbs.db
 
 # logs
-*.log
+logs/
+
+# batch file
+run_account1.bat
