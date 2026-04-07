@@ -339,7 +339,8 @@ def run_generate_review_flow(post_count=3, account_index=1):
 
                 parsed = generate_blog_review(
                     affiliate_url=affiliate_link,
-                    product_name=product_name
+                    product_name=product_name,
+                    account_index=account_index
                 )
 
                 print("\n===== 제목 =====\n")

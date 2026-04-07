@@ -192,8 +192,9 @@ def split_review_text(text: str, affiliate_url: str = "") -> dict:
     }
 
 
-def generate_blog_review(affiliate_url, product_name) -> dict:
-    system_prompt = load_prompt("blog_review_prompt.txt")
+def generate_blog_review(affiliate_url, product_name, account_index) -> dict:
+    prompt_filename = f"blog_review_prompt_{account_index}.txt"
+    system_prompt = load_prompt(prompt_filename)
 
     user_prompt = f"""
 상품명: {product_name}

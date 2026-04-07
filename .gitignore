@@ -15,7 +15,8 @@ browser_profile_acc2/
 browser_profile_acc3/
 
 # 프롬프트
-blog_review_prompt.txt
+blog_review_prompt_1.txt
+blog_review_prompt_2.txt
 
 # 실행 결과
 output/
