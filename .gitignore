@@ -17,6 +17,7 @@ browser_profile_acc3/
 # 프롬프트
 blog_review_prompt_1.txt
 blog_review_prompt_2.txt
+toss_blog_review_prompt_1.txt
 
 # 실행 결과
 output/
@@ -35,3 +36,4 @@ logs/
 
 # batch file
 run_account1.bat
+run_account2.bat

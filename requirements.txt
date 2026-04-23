@@ -3,3 +3,4 @@ python-dotenv
 openai
 pyperclip
 requests
+Pillow

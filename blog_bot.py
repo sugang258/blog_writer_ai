@@ -141,21 +141,26 @@ def parse_price_to_int(price_text: str) -> int | None:
 
 
 ## 브랜드 커넥트 링크 발급 (현재 사용 O)
-def find_product_card_and_issue_link(page, max_scroll_tries=10):
+def find_product_card_and_issue_link(
+    page,
+    start_index,
+    max_scroll_tries=10
+):
     close_brandconnect_alert_if_exists(page)
 
     last_count = 0
     scroll_try = 0
+    current_index = start_index
 
     while scroll_try <= max_scroll_tries:
         cards = page.locator("div.ProductItem_root__UR21w")
         count = cards.count()
 
         print(f"[DEBUG] 카드 개수: {count}")
-        print(f"[DEBUG] 가격 필터: {MIN_PRICE}원 ~ {MAX_PRICE}원")
+        print(f"[DEBUG] 현재 탐색 시작 index: {current_index}")
 
-        for i in range(count):
-            card = cards.nth(i)
+        while current_index < count:
+            card = cards.nth(current_index)
 
             try:
                 product_name = card.locator(
@@ -163,7 +168,7 @@ def find_product_card_and_issue_link(page, max_scroll_tries=10):
                 ).inner_text().strip()
             except Exception:
                 product_name = "상품"
-            
+
             detail_url = None
             try:
                 detail_link = card.locator("a.ProductItem_link__Vm1vw").first
@@ -174,9 +179,9 @@ def find_product_card_and_issue_link(page, max_scroll_tries=10):
             except Exception:
                 detail_url = None
 
-            # 가격 추출
             price_text = ""
             price_value = None
+
             try:
                 price_text = card.locator("ins strong").last.inner_text().strip()
                 price_value = parse_price_to_int(price_text)
@@ -185,34 +190,32 @@ def find_product_card_and_issue_link(page, max_scroll_tries=10):
                     price_text = card.locator(".ProductItem_price__yTp_T strong").last.inner_text().strip()
                     price_value = parse_price_to_int(price_text)
                 except Exception:
-                    price_text = ""
                     price_value = None
 
             button = card.locator("button.ProductItem_btn__6S6T0")
             button_text = button.inner_text().strip()
 
-            print(f"[DEBUG] card[{i}] 상품명: {product_name}")
-            print(f"[DEBUG] card[{i}] 상세URL: {detail_url}")
-            print(f"[DEBUG] card[{i}] 버튼텍스트: {button_text}")
-            print(f"[DEBUG] card[{i}] 가격텍스트: {price_text}")
-            print(f"[DEBUG] card[{i}] 가격값: {price_value}")
+            print(f"[DEBUG] card[{current_index}] 상품명: {product_name}")
+            print(f"[DEBUG] card[{current_index}] 상세URL: {detail_url}")
+            print(f"[DEBUG] card[{current_index}] 버튼텍스트: {button_text}")
+            print(f"[DEBUG] card[{current_index}] 가격텍스트: {price_text}")
+            print(f"[DEBUG] card[{current_index}] 가격값: {price_value}")
 
-            # 가격 정보 없으면 스킵
+            # 현재 카드 검사 끝났으니 다음 카드 인덱스를 미리 준비
+            next_index = current_index + 1
+
             if price_value is None:
-                print(f"[SKIP] 가격 추출 실패: {product_name}")
+                current_index = next_index
                 continue
 
-            # 최소/최대 금액 범위 밖이면 스킵
             if price_value < MIN_PRICE or price_value > MAX_PRICE:
-                print(f"[SKIP] 가격 범위 밖: {product_name} / {price_value}원")
+                current_index = next_index
                 continue
 
-            # 이미 링크 발급된 상품은 건너뜀
             if "링크 복사" in button_text:
-                print(f"[SKIP] 이미 링크 발급된 상품: {product_name}")
+                current_index = next_index
                 continue
 
-            # 아직 발급 전인 상품만 처리
             if "링크 발급" in button_text:
                 close_brandconnect_alert_if_exists(page)
 
@@ -245,10 +248,11 @@ def find_product_card_and_issue_link(page, max_scroll_tries=10):
                     "affiliate_link": issued_link,
                     "detail_url": detail_url,
                     "price": price_value
-                }
+                }, next_index
 
-        # 현재 보이는 카드에서 조건 맞는 상품이 없으면 스크롤
-        print("[DEBUG] 현재 화면에서 조건 맞는 상품 없음 → 아래로 스크롤")
+            current_index = next_index
+
+        print("[DEBUG] 현재 화면 탐색 완료 → 아래로 스크롤")
 
         page.mouse.wheel(0, 5000)
         page.wait_for_timeout(2000)
@@ -256,14 +260,12 @@ def find_product_card_and_issue_link(page, max_scroll_tries=10):
         new_count = page.locator("div.ProductItem_root__UR21w").count()
         print(f"[DEBUG] 스크롤 후 카드 개수: {new_count}")
 
-        # 카드 수가 안 늘었으면 바닥까지 한 번 더
         if new_count == count:
             page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             page.wait_for_timeout(2500)
             new_count = page.locator("div.ProductItem_root__UR21w").count()
             print(f"[DEBUG] 바닥 스크롤 후 카드 개수: {new_count}")
 
-        # 더 이상 새 카드가 안 나오면 종료
         if new_count <= last_count and new_count == count:
             scroll_try += 1
             print(f"[DEBUG] 새 카드 없음. scroll_try={scroll_try}/{max_scroll_tries}")
@@ -272,12 +274,8 @@ def find_product_card_and_issue_link(page, max_scroll_tries=10):
 
         last_count = new_count
 
-    print("[종료] 더 이상 조건에 맞는 상품이 없거나 새 카드가 로드되지 않음")
-    return None
-
-
-    
-
+    print("[종료] 더 이상 처리할 카드 없음")
+    return None, current_index
 ###################################################################
 ########################## main flow ###############################
 ###################################################################
@@ -309,12 +307,16 @@ def run_generate_review_flow(post_count=3, account_index=1):
             search_box.press("Enter")
             page.wait_for_timeout(3000)
 
+            current_index = 0
 
             while success_count < post_count:
-                result = find_product_card_and_issue_link(page)
+                result, current_index = find_product_card_and_issue_link(
+                    page,
+                    start_index=current_index
+                )
 
-                if not result:
-                    print("[종료] 더 이상 처리할 상품이 없습니다.")
+                if result is None:
+                    print("[종료] 더 이상 처리할 상품 없음")
                     break
 
                 product_name = result["product_name"]
@@ -340,6 +342,7 @@ def run_generate_review_flow(post_count=3, account_index=1):
                 parsed = generate_blog_review(
                     affiliate_url=affiliate_link,
                     product_name=product_name,
+                    urlType="naver",
                     account_index=account_index
                 )
 

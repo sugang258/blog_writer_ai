@@ -192,8 +192,12 @@ def split_review_text(text: str, affiliate_url: str = "") -> dict:
     }
 
 
-def generate_blog_review(affiliate_url, product_name, account_index) -> dict:
-    prompt_filename = f"blog_review_prompt_{account_index}.txt"
+def generate_blog_review(affiliate_url, product_name, urlType , account_index) -> dict:
+    if urlType == "naver":
+        prompt_filename = f"blog_review_prompt_{account_index}.txt"
+    else:
+        prompt_filename = f"toss_blog_review_prompt_{account_index}.txt"
+
     system_prompt = load_prompt(prompt_filename)
 
     user_prompt = f"""
